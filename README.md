@@ -1,4 +1,4 @@
 HBase.MCC
 -----------------------------
 
-Blah
+![alt tag](https://raw.githubusercontent.com/tmalaska/HBase.MCC/master/AveragePutTimeWithMultiRestartsAndShutDowns.png)
