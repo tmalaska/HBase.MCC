@@ -33,6 +33,7 @@ public class HConnectionMultiCluster implements HConnection {
   int waitTimeBeforeAcceptingResults;
   int waitTimeBeforeRequestingFailover;
   int waitTimeBeforeMutatingFailover;
+  int waitTimeBeforeMutatingFailoverWithPrimaryException;
   int waitTimeBeforeAcceptingBatchResults;
   int waitTimeBeforeRequestingBatchFailover;
   int waitTimeBeforeMutatingBatchFailover;
@@ -57,11 +58,15 @@ public class HConnectionMultiCluster implements HConnection {
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_ACCEPTING_FAILOVER_RESULT_CONFIG,
             20);
-    this.waitTimeBeforeRequestingFailover = originalConfiguration
+    this.waitTimeBeforeMutatingFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_MUTATING_FAILOVER_CONFIG,
             20);
-    this.waitTimeBeforeMutatingFailover = originalConfiguration
+    this.waitTimeBeforeMutatingFailoverWithPrimaryException = originalConfiguration
+        .getInt(
+            ConfigConst.HBASE_WAIT_TIME_BEFORE_MUTATING_FAILOVER_WITH_PRIMARY_EXCEPTION_CONFIG,
+            0);
+    this.waitTimeBeforeRequestingFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_REQUEST_FAILOVER_CONFIG,
             20);
@@ -150,6 +155,7 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeAcceptingResults,
         waitTimeBeforeRequestingFailover,
         waitTimeBeforeMutatingFailover,
+        waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
         waitTimeBeforeMutatingBatchFailover,
@@ -179,6 +185,7 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeAcceptingResults,
         waitTimeBeforeRequestingFailover,
         waitTimeBeforeMutatingFailover,
+        waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
         waitTimeBeforeMutatingBatchFailover,

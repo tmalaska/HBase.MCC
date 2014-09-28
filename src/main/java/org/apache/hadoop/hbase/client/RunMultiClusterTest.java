@@ -46,13 +46,32 @@ public class RunMultiClusterTest {
     
     HBaseAdmin admin = new HBaseAdminMultiCluster(config);
     
+    try {
+      admin.disableTable(TableName.valueOf(tableName));
+      admin.deleteTable(TableName.valueOf(tableName));
+    } catch (Exception e) {
+      //nothing
+    }
+    
     System.out.println(" - Got HAdmin:" + admin.getClass());
     
     HTableDescriptor tableD = new HTableDescriptor(TableName.valueOf(tableName));
     HColumnDescriptor columnD = new HColumnDescriptor(Bytes.toBytes(familyName));
     tableD.addFamily(columnD);
     
-    admin.createTable(tableD);
+    byte[][] splitKeys = new byte[10][1];
+    splitKeys[0][0] = '0';
+    splitKeys[1][0] = '1';
+    splitKeys[2][0] = '2';
+    splitKeys[3][0] = '3';
+    splitKeys[4][0] = '4';
+    splitKeys[5][0] = '5';
+    splitKeys[6][0] = '6';
+    splitKeys[7][0] = '7';
+    splitKeys[8][0] = '8';
+    splitKeys[9][0] = '9';
+    
+    admin.createTable(tableD, splitKeys);
     
     System.out.println("Getting HConnection");
     
@@ -73,7 +92,7 @@ public class RunMultiClusterTest {
     HTableStats.printCSVHeaders(writer);
     
     for (int i = 0; i < numberOfPuts; i++) {
-      Put put = new Put(Bytes.toBytes("key: " + StringUtils.leftPad(String.valueOf(i), 12)));
+      Put put = new Put(Bytes.toBytes(i%10 + ".key." + StringUtils.leftPad(String.valueOf(i), 12)));
       put.add(Bytes.toBytes(familyName), Bytes.toBytes("C"), Bytes.toBytes("Value:" + i));
       table.put(put);
       System.out.print(".");
