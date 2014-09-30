@@ -75,7 +75,8 @@ public class RunMultiClusterTest {
     
     System.out.println("Getting HConnection");
     
-    config.set("hbase.client.retries.number", "2");
+    config.set("hbase.client.retries.number", "1");
+    config.set("hbase.client.pause", "1");
     
     HConnection connection = HConnectionManagerMultiClusterWrapper.createConnection(config);
     
@@ -91,10 +92,20 @@ public class RunMultiClusterTest {
     
     HTableStats.printCSVHeaders(writer);
     
-    for (int i = 0; i < numberOfPuts; i++) {
+    for (int i = 1; i <= numberOfPuts; i++) {
+      System.out.print("p");
       Put put = new Put(Bytes.toBytes(i%10 + ".key." + StringUtils.leftPad(String.valueOf(i), 12)));
       put.add(Bytes.toBytes(familyName), Bytes.toBytes("C"), Bytes.toBytes("Value:" + i));
       table.put(put);
+      
+      System.out.print("g");
+      Get get = new Get(Bytes.toBytes(i%10 + ".key." + StringUtils.leftPad(String.valueOf(i), 12)));
+      table.get(get);
+      
+      System.out.print("d");
+      Delete delete = new Delete(Bytes.toBytes(i%10 + ".key." + StringUtils.leftPad(String.valueOf(i), 12)));
+      table.delete(delete);
+      
       System.out.print(".");
       if (i % 100 == 0) {
         System.out.println("|");

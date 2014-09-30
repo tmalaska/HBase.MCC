@@ -63,9 +63,6 @@ public class HTableMultiCluster implements HTableInterface {
 
   HTableStats stats = new HTableStats();
 
-  ExecutorService executor; // =
-                            // Executors.newFixedThreadPool(failoverHTables.size()
-                            // + 1);
 
   static final Log LOG = LogFactory.getLog(HTableMultiCluster.class);
 
@@ -81,7 +78,7 @@ public class HTableMultiCluster implements HTableInterface {
       int waitTimeBeforeMutatingFailoverWithPrimaryException,
       int waitTimeBeforeAcceptingBatchResults,
       int waitTimeBeforeRequestingBatchFailover,
-      int waitTimeBeforeMutatingBatchFailover, ExecutorService executor) {
+      int waitTimeBeforeMutatingBatchFailover) {
 
     this.primaryHTable = primaryHTable;
     this.failoverHTables = failoverHTables;
@@ -95,7 +92,6 @@ public class HTableMultiCluster implements HTableInterface {
     this.waitTimeBeforeMutatingBatchFailover = waitTimeBeforeMutatingBatchFailover;
 
     this.originalConfiguration = originalConfiguration;
-    this.executor = executor;
   }
 
   public byte[] getTableName() {
@@ -134,8 +130,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<Boolean> result = (new SpeculativeRequester<Boolean>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -162,8 +157,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<Boolean[]> result = (new SpeculativeRequester<Boolean[]>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -197,7 +191,18 @@ public class HTableMultiCluster implements HTableInterface {
     long ts = System.currentTimeMillis();
     Callable<Result> primaryCallable = new Callable<Result>() {
       public Result call() throws Exception {
-        return primaryHTable.get(get);
+        try {
+          return primaryHTable.get(get); 
+        } catch (java.io.InterruptedIOException e) {
+          //throw e;
+          Thread.currentThread().interrupt();
+        } catch (Exception e) {
+          lastPrimaryFail.set(System.currentTimeMillis());
+          Thread.currentThread().interrupt();
+          //e.printStackTrace();
+          //throw e;
+        }
+        return null;
       }
     };
 
@@ -211,8 +216,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -224,7 +228,18 @@ public class HTableMultiCluster implements HTableInterface {
 
     Callable<Result[]> primaryCallable = new Callable<Result[]>() {
       public Result[] call() throws Exception {
-        return primaryHTable.get(gets);
+        try {
+          return primaryHTable.get(gets);
+        } catch (java.io.InterruptedIOException e) {
+          //throw e;
+          Thread.currentThread().interrupt();
+        } catch (Exception e) {
+          lastPrimaryFail.set(System.currentTimeMillis());
+          Thread.currentThread().interrupt();
+          //e.printStackTrace();
+          //throw e;
+        }
+        return null;
       }
     };
 
@@ -238,8 +253,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<Result[]> result = (new SpeculativeRequester<Result[]>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -269,8 +283,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -297,8 +310,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -326,8 +338,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -356,8 +367,7 @@ public class HTableMultiCluster implements HTableInterface {
     }
 
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults,
-        executor)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -373,7 +383,6 @@ public class HTableMultiCluster implements HTableInterface {
 
     final Put newPut = setTimeStampOfUnsetValues(put, ts);
 
-    ExecutorService exe = Executors.newFixedThreadPool(2);
 
     Callable<Void> primaryCallable = new Callable<Void>() {
       public Void call() throws Exception {
@@ -381,11 +390,15 @@ public class HTableMultiCluster implements HTableInterface {
           primaryHTable.put(newPut);
           return null;
         } catch (java.io.InterruptedIOException e) {
-          throw e;
+          //throw e;
+          Thread.currentThread().interrupt();
         } catch (Exception e) {
           lastPrimaryFail.set(System.currentTimeMillis());
-          throw e;
+          Thread.currentThread().interrupt();
+          //e.printStackTrace();
+          //throw e;
         }
+        return null;
       }
     };
 
@@ -401,10 +414,9 @@ public class HTableMultiCluster implements HTableInterface {
 
     Boolean isPrimary = SpeculativeMutater.mutate(
         waitTimeBeforeAcceptingBatchResults,
-        waitTimeBeforeMutatingFailoverWithPrimaryException, exe,
+        waitTimeBeforeMutatingFailoverWithPrimaryException, 
         primaryCallable, callables, lastPrimaryFail);
 
-    exe.shutdownNow();
 
     long time = System.currentTimeMillis() - ts;
     
@@ -443,8 +455,11 @@ public class HTableMultiCluster implements HTableInterface {
         try {
           primaryHTable.put(newPuts);
           return null;
+        } catch (java.io.InterruptedIOException e) {
+          throw e;
         } catch (Exception e) {
           lastPrimaryFail.set(System.currentTimeMillis());
+          e.printStackTrace();
           throw e;
         }
       }
@@ -462,7 +477,7 @@ public class HTableMultiCluster implements HTableInterface {
 
     Boolean isPrimary = SpeculativeMutater.mutate(
         waitTimeBeforeAcceptingBatchResults,
-        waitTimeBeforeMutatingFailoverWithPrimaryException, executor,
+        waitTimeBeforeMutatingFailoverWithPrimaryException, 
         primaryCallable, callables, lastPrimaryFail);
     stats.addPutList(isPrimary, System.currentTimeMillis() - ts);
   }
@@ -481,10 +496,16 @@ public class HTableMultiCluster implements HTableInterface {
         try {
           primaryHTable.delete(delete);
           return null;
+        } catch (java.io.InterruptedIOException e) {
+          Thread.currentThread().interrupt();
+          //throw e;
         } catch (Exception e) {
           lastPrimaryFail.set(System.currentTimeMillis());
-          throw e;
+          //e.printStackTrace();
+          Thread.currentThread().interrupt();
+          //throw e;
         }
+        return null;
       }
     };
 
@@ -492,7 +513,7 @@ public class HTableMultiCluster implements HTableInterface {
     for (final HTableInterface failoverTable : failoverHTables) {
       callables.add(new Callable<Void>() {
         public Void call() throws Exception {
-          primaryHTable.delete(delete);
+          failoverTable.delete(delete);
           return null;
         }
       });
@@ -500,7 +521,7 @@ public class HTableMultiCluster implements HTableInterface {
 
     Boolean isPrimary = SpeculativeMutater.mutate(
         waitTimeBeforeAcceptingBatchResults,
-        waitTimeBeforeMutatingFailoverWithPrimaryException, executor,
+        waitTimeBeforeMutatingFailoverWithPrimaryException, 
         primaryCallable, callables, lastPrimaryFail);
 
     stats.addDelete(isPrimary, System.currentTimeMillis() - ts);
@@ -514,8 +535,11 @@ public class HTableMultiCluster implements HTableInterface {
         try {
           primaryHTable.delete(deletes);
           return null;
+        } catch (java.io.InterruptedIOException e) {
+          throw e;
         } catch (Exception e) {
           lastPrimaryFail.set(System.currentTimeMillis());
+          //e.printStackTrace();
           throw e;
         }
       }
@@ -533,7 +557,7 @@ public class HTableMultiCluster implements HTableInterface {
 
     Boolean isPrimary = SpeculativeMutater.mutate(
         waitTimeBeforeAcceptingBatchResults,
-        waitTimeBeforeMutatingFailoverWithPrimaryException, executor,
+        waitTimeBeforeMutatingFailoverWithPrimaryException, 
         primaryCallable, callables, lastPrimaryFail);
 
     stats.addDeleteList(isPrimary, System.currentTimeMillis() - ts);

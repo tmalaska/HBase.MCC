@@ -158,8 +158,7 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
-        waitTimeBeforeMutatingBatchFailover,
-        executor);
+        waitTimeBeforeMutatingBatchFailover);
   }
 
   public HTableInterface getTable(String tableName, ExecutorService pool)
@@ -188,8 +187,7 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
-        waitTimeBeforeMutatingBatchFailover,
-        executor);
+        waitTimeBeforeMutatingBatchFailover);
   }
 
   public boolean isMasterRunning() throws MasterNotRunningException,

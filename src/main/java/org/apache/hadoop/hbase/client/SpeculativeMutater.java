@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -13,9 +15,14 @@ import org.apache.commons.logging.LogFactory;
 
 public class SpeculativeMutater {
   static final Log LOG = LogFactory.getLog(SpeculativeMutater.class);
+
+  static ExecutorService exe = Executors.newFixedThreadPool(200);
   
-  public static Boolean mutate(final long waitToSendFailover, final long waitToSendFailoverWithException, ExecutorService executor, final Callable<Void> primaryCallable,
+  
+  public static Boolean mutate(final long waitToSendFailover, final long waitToSendFailoverWithException, final Callable<Void> primaryCallable,
       final List<Callable<Void>> failoverCallables, AtomicLong lastPrimaryFail) {
+    
+    ExecutorCompletionService<Boolean> exeS = new ExecutorCompletionService<Boolean>(exe);
     
     ArrayList<Callable<Boolean>> callables = new ArrayList<Callable<Boolean>>();
     
@@ -23,13 +30,16 @@ public class SpeculativeMutater {
     final long startTime = System.currentTimeMillis();
     final long lastPrimaryFinalFail = lastPrimaryFail.get();
     
-    callables.add(new Callable<Boolean>() {
-      public Boolean call() throws Exception {
-        primaryCallable.call();
-        isPrimarySuccess.set(true);
-        return true; 
-      }
-    });
+    if (System.currentTimeMillis() - lastPrimaryFinalFail > 5000) {
+      callables.add(new Callable<Boolean>() {
+        public Boolean call() throws Exception {
+          
+          primaryCallable.call();
+          isPrimarySuccess.set(true);
+          return true; 
+        }
+      });
+    }
     
 
     for (final Callable<Void> failoverCallable : failoverCallables) {
@@ -39,7 +49,6 @@ public class SpeculativeMutater {
           long waitToRequest = (System.currentTimeMillis() - lastPrimaryFinalFail > 5000)?
               waitToSendFailover - (System.currentTimeMillis() - startTime): waitToSendFailoverWithException - (System.currentTimeMillis() - startTime);
               
-              //System.out.println((System.currentTimeMillis() - lastPrimaryFinalFail > 5000) + ":" + lastPrimaryFinalFail + ":" + waitToRequest);
               
           if (waitToRequest > 0) {
             Thread.sleep(waitToRequest);
@@ -54,9 +63,14 @@ public class SpeculativeMutater {
       });
     }
     try {
-      Boolean result = executor.invokeAny(callables);
+      //Boolean result = exe.invokeAny(callables);
       
-      executor.shutdownNow();
+      for (Callable<Boolean> call: callables) {
+        exeS.submit(call);
+      }
+      Boolean result = exeS.take().get();
+      
+      //exe.shutdownNow();
       
       return result;
     } catch (InterruptedException e) {

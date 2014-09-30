@@ -28,6 +28,20 @@ public class HTableStats {
   AtomicLong deleteListPrimary = new AtomicLong(0);
   AtomicLong deleteListFailover = new AtomicLong(0);
   
+  long lastPutPrimary = 0;
+  long lastPutFailover = 0;
+  long lastPutListPrimary = 0;
+  long lastPutListFailover = 0;
+  long lastGetPrimary = 0;
+  long lastGetFailover = 0;
+  long lastGetListPrimary = 0;
+  long lastGetListFailover = 0;
+  long lastDeletePrimary = 0;
+  long lastDeleteFailover = 0;
+  long lastDeleteListPrimary = 0;
+  long lastDeleteListFailover = 0;
+  
+  
   static final int ROLLING_AVG_WINDOW = 90;
   BlockingQueue<Long> putRollingAverage = new LinkedBlockingQueue<Long>();
   BlockingQueue<Long> putListRollingAverage = new LinkedBlockingQueue<Long>();
@@ -99,20 +113,36 @@ public class HTableStats {
         "getListRollingMax," + 
         "deleteRollingMax," + 
         "deleteListRollingMax," +
-        "putPrimary," + 
-        "putFailover," + 
-        "putListPrimary," + 
-        "putListFailover," +
-        "getPrimary," + 
-        "getFailover," + 
-        "getListPrimary," + 
-        "getListFailover," +
-        "deletePrimary," + 
-        "deleteFailover," + 
-        "deleteListPrimary," + 
-        "deleteListFailover" + newLine);
+        "putPrimaryTotalCount," + 
+        "putPrimaryRollingCount," + 
+        "putFailoverTotalCount," +
+        "putFailoverRollingCount," +
+        "putListPrimaryTotalCount," +
+        "putListPrimaryRollingCount," +
+        "putListFailoverTotalCount," +
+        "putListFailoverRollingCount," +
+        "getPrimaryCount," +
+        "getPrimaryRollingCount," +
+        "getFailoverCount," +
+        "getFailoverRollingCount," +
+        "getListPrimaryCount," +
+        "getListPrimaryRollingCount," +
+        "getListFailoverCount," +
+        "getListFailoverRollingCount," +
+        "deletePrimaryCount," + 
+        "deletePrimaryRollingCount," + 
+        "deleteFailoverCount," + 
+        "deleteFailoverRollingCount," + 
+        "deleteListPrimaryCount," +
+        "deleteListPrimaryRollingCount," +
+        "deleteListFailoverCount," +
+        "deleteListFailoverRollingCount," +
+        newLine);
+    
     
   }
+  
+  
   
   public void printCSVStats(Writer writer) throws IOException {
     writer.append(maxPutTime + "," +
@@ -134,17 +164,44 @@ public class HTableStats {
         getRollingMax(deleteRollingAverage) + "," + 
         getRollingMax(deleteListRollingAverage) + "," +
         putPrimary + "," + 
-        putFailover + "," + 
-        putListPrimary + "," + 
+        (putPrimary.get()-lastPutPrimary) + "," + 
+        putFailover + "," +
+        (putFailover.get()-lastPutFailover) + "," +
+        putListPrimary + "," +
+        (putListPrimary.get()-lastPutListPrimary) + "," +
         putListFailover + "," +
-        getPrimary + "," + 
-        getFailover + "," + 
-        getListPrimary + "," + 
-        getListFailover + "," +
-        deletePrimary + "," + 
-        deleteFailover + "," + 
-        deleteListPrimary + "," + 
-        deleteListFailover + newLine);
+        (putListFailover.get()-lastPutListFailover) + "," +
+        getPrimary + "," +
+        (getPrimary.get()-lastGetPrimary) + "," + 
+        (getFailover.get()) + "," + 
+        (getFailover.get()-lastGetFailover) + "," + 
+        (getListPrimary.get()) + "," +
+        (getListPrimary.get()-lastGetListPrimary) + "," +
+        (getListFailover.get()) + "," +
+        (getListFailover.get()-lastGetListFailover) + "," +
+        (deletePrimary.get()) + "," + 
+        (deletePrimary.get()-lastDeletePrimary) + "," + 
+        (deleteFailover.get()) + "," +
+        (deleteFailover.get()-lastDeleteFailover) + "," +
+        (deleteListPrimary.get()) + "," +
+        (deleteListPrimary.get()-lastDeleteListPrimary) + "," +
+        (deleteListFailover.get()) + "," +
+        (deleteListFailover.get()-lastDeleteListFailover) +
+        newLine);
+    
+    lastPutPrimary = putPrimary.get();
+    lastPutFailover = putFailover.get();
+    lastPutListPrimary = putListPrimary.get();
+    lastPutListFailover = putListFailover.get();
+    lastGetPrimary = getPrimary.get();
+    lastGetFailover = getFailover.get();
+    lastGetListPrimary = getListPrimary.get();
+    lastGetListFailover = getListFailover.get();
+    lastDeletePrimary = deletePrimary.get();
+    lastDeleteFailover = deleteFailover.get();
+    lastDeleteListPrimary = deleteListPrimary.get();
+    lastDeleteListFailover = deleteListFailover.get();
+    
   }
   
   public static long getRollingAvg(BlockingQueue<Long> queue) {
