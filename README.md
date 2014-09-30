@@ -7,6 +7,13 @@ HBase.MCC
 
 ![alt tag](https://raw.githubusercontent.com/tmalaska/HBase.MCC/master/AveragePutTimeWithMultiRestartsAndShutDowns.png)
 
-The image above is the initial results of a 20k put test with two clusters.  The blue lines are the average time for the puts to commits to a Cluster.  Now the red lines are puts to the primary cluster and green lines are puts that are sent to the failover cluster.  When you see green lines they are the results of the primary cluster being shut down or bounced. The cool thing here is we are keeping a pretty good average even in the case of extreme failure.  There is an increase in the time to put to the failover cluster but that is because I set the parameters to only go to the failover cluster after waiting 20 milliseconds.### Design Doc
+The first graph is the break down of which cluster was being used.  The red areas are when I bounced the primary HBase cluster and it failed to deliver responses.
+
+Note that the average response time is pretty much unaffected. 
+
+Also note there is a hit when the cluster got down but the max delay is at 700 milliseconds.  
+
+More testing will happen in the coming weeks.
+### Design Doc
 There is a design doc in the root folder named MultiHBaseClientDesignDoc.docx.  That document goes over the approach and the configuration options.
 
