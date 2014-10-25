@@ -40,7 +40,7 @@ public class SpeculativeRequester<T extends Object> {
 
     ArrayList<Callable<ResultWrapper<T>>> callables = new ArrayList<Callable<ResultWrapper<T>>>();
 
-    if (System.currentTimeMillis() - lastPrimaryFail > 10000) {
+    if (System.currentTimeMillis() - lastPrimaryFail > 5000) {
       callables.add(new Callable<ResultWrapper<T>>() {
         public ResultWrapper<T> call() throws Exception {
           T t = primaryCallable.call();
@@ -55,7 +55,7 @@ public class SpeculativeRequester<T extends Object> {
 
         public ResultWrapper<T> call() throws Exception {
           
-          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail > 10000)?
+          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail > 5000)?
               waitTimeBeforeRequestingFailover - (System.currentTimeMillis() - startTime): 0;
               
           
@@ -65,7 +65,7 @@ public class SpeculativeRequester<T extends Object> {
           if (isPrimarySuccess.get() == false) {
             T t = failoverCallable.call();
 
-            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail > 10000)?
+            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail > 5000)?
                 waitTimeBeforeAcceptingResults - (System.currentTimeMillis() - startTime): 0;
             if (isPrimarySuccess.get() == false) {
               if (waitToAccept > 0) {

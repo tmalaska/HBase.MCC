@@ -18,14 +18,14 @@ import org.apache.log4j.Logger;
 
 public class HBaseMultiClusterConfigUtil {
   
-  static Logger log = Logger.getLogger(HBaseMultiClusterConfigUtil.class);
+  static Logger LOG = Logger.getLogger(HBaseMultiClusterConfigUtil.class);
   static final String PRIMARY_NAME = "primary";
   
   public static void main(String[] args) throws IOException {
     if (args.length == 0) {
       System.out.println("HBaseMultiClusterUtil <command> <args ....>");
       System.out.println("HBaseMultiClusterUtil combineConfigs <primary conf 1> <failover name> <failover conf 1> <optional failover name N> <optional failover conf N>");
-      System.out.println("HBaseMultiClusterUtil splitConfigs c<configuration file>");
+      System.out.println("HBaseMultiClusterUtil splitConfigs <configuration file>");
       return;
     }
     
@@ -34,9 +34,9 @@ public class HBaseMultiClusterConfigUtil {
       
       Configuration primaryConfig = generateCombinedConfig(args);
       
-      log.info("Writting Out New Primary");
+      LOG.info("Writting Out New Primary");
       primaryConfig.writeXml(new BufferedWriter(new FileWriter(new File(outputFile))));
-      log.info(" - Successful Written Out New Primary");
+      LOG.info(" - Successful Written Out New Primary");
     } else if (args[0].equals("splitConfigs")) {
       
       Configuration config = HBaseConfiguration.create();
@@ -49,7 +49,7 @@ public class HBaseMultiClusterConfigUtil {
       
       splitMultiConfigFile(config);
     } else {
-      log.info("Unknown command: " + args[0]);
+      LOG.info("Unknown command: " + args[0]);
     }
   }
   
@@ -156,10 +156,10 @@ public class HBaseMultiClusterConfigUtil {
   public static Configuration generateCombinedConfig(String primaryConfigFile, Map<String, String> failoverConfigNameAndFiles) throws IOException {
     
     
-    log.info("Opening primary Config");
+    LOG.info("Opening primary Config");
     Configuration primaryConfig = HBaseConfiguration.create();
     primaryConfig.addResource(primaryConfigFile);
-    log.info(" - Successfully Opened primary Config");
+    LOG.info(" - Successfully Opened primary Config");
     
     StringBuilder failOverClusterNames = new StringBuilder();
     boolean isFirst = true;
@@ -171,20 +171,20 @@ public class HBaseMultiClusterConfigUtil {
       }
       failOverClusterNames.append(entry.getKey());
       
-      log.info("Opening failover config: " + entry.getKey() + " " + entry.getValue());
+      LOG.info("Opening failover config: " + entry.getKey() + " " + entry.getValue());
       
       Configuration failureConfig = HBaseConfiguration.create();
       failureConfig.addResource(entry.getValue());
-      log.info(" - Successfully Opened primary Config: " + entry.getKey());
+      LOG.info(" - Successfully Opened primary Config: " + entry.getKey());
       
       Iterator<Entry<String, String>> it = failureConfig.iterator();
       while (it.hasNext()) {
         Entry<String, String> keyValue = it.next();
         
-        log.info(" -- Looking at : " + keyValue.getKey() + "=" + keyValue.getValue());
+        LOG.info(" -- Looking at : " + keyValue.getKey() + "=" + keyValue.getValue());
         if (keyValue.getKey().startsWith("hbase.")) {
           primaryConfig.set(ConfigConst.HBASE_FAILOVER_CLUSTER_CONFIG + "." + entry.getKey() + "." + keyValue.getKey(), keyValue.getValue());
-          log.info(" - Porting config: " + keyValue.getKey() + "=" + keyValue.getValue());
+          LOG.info(" - Porting config: " + keyValue.getKey() + "=" + keyValue.getValue());
         }
       }
     }

@@ -41,8 +41,9 @@ public class HConnectionManagerMultiClusterWrapper {
           System.out.println(" --- Got failover Connction");
         }
       }
+      
       return new HConnectionMultiCluster(conf, primaryConnection,
-          failoverConnections);
+          failoverConnections.toArray(new HConnection[0]));
     }
   }
 }

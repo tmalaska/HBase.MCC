@@ -27,7 +27,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 public class HConnectionMultiCluster implements HConnection {
 
   HConnection primaryConnection;
-  List<HConnection> failoverConnections;
+  HConnection[] failoverConnections;
   Configuration originalConfiguration;
   boolean isMasterMaster;
   int waitTimeBeforeAcceptingResults;
@@ -46,7 +46,7 @@ public class HConnectionMultiCluster implements HConnection {
   ExecutorService executor; // = Executors.newFixedThreadPool(failoverHTables.size() + 1);
 
   public HConnectionMultiCluster(Configuration originalConfiguration,
-      HConnection primaryConnection, List<HConnection> failoverConnections) {
+      HConnection primaryConnection, HConnection[] failoverConnections) {
     this.primaryConnection = primaryConnection;
     this.failoverConnections = failoverConnections;
     this.originalConfiguration = originalConfiguration;

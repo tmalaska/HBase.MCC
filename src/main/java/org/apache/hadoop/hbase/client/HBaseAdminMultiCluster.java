@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
@@ -19,11 +20,12 @@ import org.apache.hadoop.hbase.protobuf.RequestConverter;
 import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.DisableTableRequest;
 import org.apache.log4j.Logger;
 
+import com.google.common.base.Optional;
 import com.google.protobuf.ServiceException;
 
 public class HBaseAdminMultiCluster extends HBaseAdmin {
 
-  Logger log = Logger.getLogger(HBaseAdminMultiCluster.class);
+  Logger LOG = Logger.getLogger(HBaseAdminMultiCluster.class);
 
   Map<String, HBaseAdmin> failoverAdminMap = new HashMap<String, HBaseAdmin>();
 
@@ -38,16 +40,14 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
 
     for (Entry<String, Configuration> entry : configs.entrySet()) {
 
-      if (entry.getKey().equals(HBaseMultiClusterConfigUtil.PRIMARY_NAME)) {
-
-      } else {
+      if (!entry.getKey().equals(HBaseMultiClusterConfigUtil.PRIMARY_NAME)) {
         HBaseAdmin admin = new HBaseAdmin(entry.getValue());
-        log.info("creating HBaseAdmin for : " + entry.getKey());
+        LOG.info("creating HBaseAdmin for : " + entry.getKey());
         failoverAdminMap.put(entry.getKey(), admin);
-        log.info(" - successfully creating HBaseAdmin for : " + entry.getKey());
+        LOG.info(" - successfully creating HBaseAdmin for : " + entry.getKey());
       }
     }
-    log.info("Successful loaded all HBaseAdmins");
+    LOG.info("Successful loaded all HBaseAdmins");
 
   }
 
@@ -56,21 +56,21 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
    * This will only return tables that all three HBase clusters have
    */
   public HTableDescriptor[] listTables() throws IOException {
-    Map<String, HTableDescriptor> tableMap = new HashMap<String, HTableDescriptor>();
+    Map<TableName, HTableDescriptor> tableMap = new HashMap<TableName, HTableDescriptor>();
 
     HTableDescriptor[] primaryList = super.listTables();
 
     for (HTableDescriptor table : primaryList) {
-      tableMap.put(table.getNameAsString(), table);
+      tableMap.put(table.getTableName(), table);
     }
 
     for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      Map<String, HTableDescriptor> tempTableMap = new HashMap<String, HTableDescriptor>();
+      Map<TableName, HTableDescriptor> tempTableMap = new HashMap<TableName, HTableDescriptor>();
 
       HTableDescriptor[] failureList = super.listTables();
 
       for (HTableDescriptor table : failureList) {
-        String tableName = table.getNameAsString();
+        TableName tableName = table.getTableName();
         if (tableMap.containsKey(tableName)) {
           tempTableMap.put(tableName, tableMap.get(tableName));
         }
@@ -88,100 +88,143 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   }
 
   @Override
-  public void createTable(HTableDescriptor desc) throws IOException {
-    try {
-      super.createTable(desc, null);
-      
-    } catch (Exception e) {
-      log.error("Unable to create table " + desc.getTableName()
-          + " in primary.", e);
-    }
+  public void createTable(final HTableDescriptor desc) throws IOException {
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().createTable(desc, null);
-      } catch (Exception e) {
-        log.error("Unable to create table " + desc.getTableName() + " in "
-            + entry.getKey(), e);
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
+
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.createTable(desc, null);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().createTable(desc, null);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "createTable");
   }
 
   @Override
-  public void createTable(HTableDescriptor desc, byte[] startKey,
-      byte[] endKey, int numRegions) {
-    try {
-      super.createTable(desc, startKey, endKey, numRegions);
-    } catch (Exception e) {
-      log.error("Unable to create table " + desc.getTableName()
-          + " in primary.", e);
-    }
+  public void createTable(final HTableDescriptor desc, final byte[] startKey,
+      final byte[] endKey, final int numRegions) throws IOException {
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().createTable(desc, startKey, endKey, numRegions);
-      } catch (Exception e) {
-        log.error("Unable to create table " + desc.getTableName() + " in "
-            + entry.getKey(), e);
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
+
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.createTable(desc, startKey, endKey,
+            numRegions);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().createTable(desc, startKey, endKey, numRegions);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "createTable");
   }
 
   @Override
-  public void createTable(final HTableDescriptor desc, byte[][] splitKeys) {
-    try {
-      super.createTable(desc, splitKeys);
-    } catch (Exception e) {
-      log.error("Unable to create table " + desc.getTableName()
-          + " in primary.", e);
-    }
+  public void createTable(final HTableDescriptor desc, 
+      final byte[][] splitKeys) throws IOException {
+    
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().createTable(desc, splitKeys);
-      } catch (Exception e) {
-        log.error("Unable to create table " + desc.getTableName() + " in "
-            + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.createTable(desc, splitKeys);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().createTable(desc, splitKeys);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "createTable");
   }
 
   @Override
   public void createTableAsync(final HTableDescriptor desc,
-      final byte[][] splitKeys) {
-    try {
-      super.createTableAsync(desc, splitKeys);
-    } catch (Exception e) {
-      log.error("Unable to create table " + desc.getTableName()
-          + " in primary.", e);
-    }
+      final byte[][] splitKeys) throws IOException {
+    
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().createTableAsync(desc, splitKeys);
-      } catch (Exception e) {
-        log.error("Unable to create table " + desc.getTableName() + " in "
-            + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.createTableAsync(desc, splitKeys);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().createTableAsync(desc, splitKeys);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "createTableAsync");
+
   }
 
   @Override
   public void deleteTable(final TableName tableName) throws IOException {
-    try {
-      super.deleteTable(tableName);
-    } catch (Exception e) {
-      log.error("Unable to delete table " + tableName + " in primary.", e);
-    }
+    
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().deleteTable(tableName);
-      } catch (Exception e) {
-        log.error(
-            "Unable to delete table " + tableName + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.deleteTable(tableName);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().deleteTable(tableName);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "deleteTable");
   }
 
   @Override
@@ -200,42 +243,59 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   }
 
   @Override
-  public HTableDescriptor[] deleteTables(Pattern pattern) throws IOException {
-    HTableDescriptor[] results = null;
-
-    try {
-      results = super.deleteTables(pattern);
-    } catch (Exception e) {
-      log.error("Unable to delete tables " + pattern + " in primary.", e);
-    }
-
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().deleteTables(pattern);
-      } catch (Exception e) {
-        log.error(
-            "Unable to delete tables " + pattern + " in " + entry.getKey(), e);
+  public HTableDescriptor[] deleteTables(final Pattern pattern) throws IOException {
+    
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
+    final Value<HTableDescriptor[]> results = new Value<HTableDescriptor[]>();
+    
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        results.setValue(HBaseAdminMultiCluster.super.deleteTables(pattern));
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().deleteTables(pattern);
+          return null;
+        }
+      };
     }
-    return results;
+    replicationClusterExecute(callArray, "deleteTables");
+    
+    return results.getValue();
   }
 
   @Override
-  public void enableTable(final TableName tableName) {
-    try {
-      super.enableTable(tableName);
-    } catch (Exception e) {
-      log.error("Unable to enable tables " + tableName + " in primary.", e);
-    }
+  public void enableTable(final TableName tableName) throws IOException {
+    @SuppressWarnings("unchecked")
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().enableTable(tableName);
-      } catch (Exception e) {
-        log.error(
-            "Unable to enable tables " + tableName + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.enableTable(tableName);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().enableTable(tableName);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "enableTable");
   }
 
   @Override
@@ -248,21 +308,28 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
     enableTable(TableName.valueOf(tableName));
   }
 
-  public void enableTableAsync(final TableName tableName) {
-    try {
-      super.enableTableAsync(tableName);
-    } catch (Exception e) {
-      log.error("Unable to enable tables " + tableName + " in primary.", e);
-    }
+  public void enableTableAsync(final TableName tableName) throws IOException {
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().enableTableAsync(tableName);
-      } catch (Exception e) {
-        log.error(
-            "Unable to enable tables " + tableName + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.enableTableAsync(tableName);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().enableTableAsync(tableName);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "enableTableAsync");
   }
 
   @Override
@@ -280,43 +347,56 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
     return enableTables(Pattern.compile(regex));
   }
 
-  public HTableDescriptor[] enableTables(Pattern pattern) throws IOException {
+  public HTableDescriptor[] enableTables(final Pattern pattern) throws IOException {
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
+    final Value<HTableDescriptor[]> results = new Value<HTableDescriptor[]>();
 
-    HTableDescriptor[] results = null;
-
-    try {
-      results = super.enableTables(pattern);
-    } catch (Exception e) {
-      log.error("Unable to enable tables " + pattern + " in primary.", e);
-    }
-
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().enableTables(pattern);
-      } catch (Exception e) {
-        log.error(
-            "Unable to enable tables " + pattern + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        results.setValue(HBaseAdminMultiCluster.super.enableTables(pattern));
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().enableTables(pattern);
+          return null;
+        }
+      };
     }
-    return results;
+    replicationClusterExecute(callArray, "enableTables");
+    
+    return results.getValue();
   }
 
   @Override
   public void disableTableAsync(final TableName tableName) throws IOException {
-    try {
-      super.disableTableAsync(tableName);
-    } catch (Exception e) {
-      log.error("Unable to enable tables " + tableName + " in primary.", e);
-    }
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().disableTableAsync(tableName);
-      } catch (Exception e) {
-        log.error(
-            "Unable to enable tables " + tableName + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.disableTableAsync(tableName);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().disableTableAsync(tableName);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "disableTableAsync");
   }
 
   @Override
@@ -330,24 +410,30 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   }
 
   @Override
-  public void disableTable(final TableName tableName) {
-    try {
-      super.disableTable(tableName);
-    } catch (Exception e) {
-      log.error("Unable to disableTable  " + tableName + " in primary.", e);
-    }
+  public void disableTable(final TableName tableName) throws IOException {
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
 
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().disableTable(tableName);
-      } catch (Exception e) {
-        log.error(
-            "Unable to disableTable  " + tableName + " in " + entry.getKey(), e);
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.disableTable(tableName);
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().disableTable(tableName);
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "disableTable");
   }
- 
-  
+
   @Override
   public void disableTable(final byte[] tableName) throws IOException {
     disableTable(TableName.valueOf(tableName));
@@ -357,7 +443,7 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   public void disableTable(final String tableName) throws IOException {
     disableTable(TableName.valueOf(tableName));
   }
-  
+
   /**
    * @param tableName
    *          Table to check.
@@ -377,31 +463,41 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   }
 
   public void close() throws IOException {
-    try {
-      super.close();
-    } catch (Exception e) {
-      log.error("Unable to close in primary.", e);
-    }
-    for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
-      try {
-        entry.getValue().close();
-      } catch (Exception e) {
-        log.error("Unable to close  " + entry.getKey(), e);
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    int counter = 0;
+
+    callArray[counter++] = new Callable<Void>() {
+      @Override
+      public Void call() throws Exception {
+        HBaseAdminMultiCluster.super.close();
+        return null;
       }
+    };
+
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          entry.getValue().close();
+          return null;
+        }
+      };
     }
+    replicationClusterExecute(callArray, "close");
+    
   }
 
   public void abort(String why, Throwable e) {
     try {
       super.abort(why, e);
     } catch (Exception e2) {
-      log.error("Unable to abort in primary.", e2);
+      LOG.error("Unable to abort in primary.", e2);
     }
     for (Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
       try {
         entry.getValue().abort(why, e);
       } catch (Exception e2) {
-        log.error("Unable to abort  " + entry.getKey(), e2);
+        LOG.error("Unable to abort  " + entry.getKey(), e2);
       }
     }
 
@@ -412,4 +508,35 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
     return false;
   }
 
+  private void replicationClusterExecute(Callable<Void>[] callArray,
+      String actionMethodName) throws IOException {
+    Exception exp = null;
+    int expCounter = 0;
+
+    for (Callable<Void> call : callArray) {
+      try {
+        call.call();
+      } catch (Exception e) {
+        if (exp == null) {
+          exp = e;
+        }
+        expCounter++;
+      }
+    }
+    if (expCounter > 0) {
+      throw new IOException("Got " + expCounter
+          + " exceptions trying to execute " + actionMethodName, exp);
+    }
+  }
+  
+  private static class Value<T extends Object> {
+    T value;
+    public void setValue(T value) {
+      this.value = value;
+    }
+    
+    public T getValue() {
+      return value;
+    }
+  }
 }
