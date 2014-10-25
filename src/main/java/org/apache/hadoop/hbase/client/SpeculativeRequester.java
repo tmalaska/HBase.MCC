@@ -32,7 +32,7 @@ public class SpeculativeRequester<T extends Object> {
     this.lastPrimaryFail = lastPrimaryFail;
   }
 
-  public ResultWrapper<T> request(final RequestFunction<T> function, 
+  public ResultWrapper<T> request(final HBaseTableFunction<T> function, 
       final HTableInterface primaryTable, 
       final Collection<HTableInterface> failoverTables) {
     
@@ -113,81 +113,7 @@ public class SpeculativeRequester<T extends Object> {
     return null;
     
   }
-  /*
-  public ResultWrapper<T> request(final Callable<T> primaryCallable,
-      final List<Callable<T>> failoverCallables) {
-
-    ExecutorCompletionService<ResultWrapper<T>> exeS = new ExecutorCompletionService<ResultWrapper<T>>(exe);
-    
-    final AtomicBoolean isPrimarySuccess = new AtomicBoolean(false);
-    final long startTime = System.currentTimeMillis();
-
-    ArrayList<Callable<ResultWrapper<T>>> callables = new ArrayList<Callable<ResultWrapper<T>>>();
-
-    if (System.currentTimeMillis() - lastPrimaryFail > 5000) {
-      callables.add(new Callable<ResultWrapper<T>>() {
-        public ResultWrapper<T> call() throws Exception {
-          T t = primaryCallable.call();
-          isPrimarySuccess.set(true);
-          return new ResultWrapper(true, t);
-        }
-      });
-    }
-
-    for (final Callable<T> failoverCallable : failoverCallables) {
-      callables.add(new Callable<ResultWrapper<T>>() {
-
-        public ResultWrapper<T> call() throws Exception {
-          
-          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail > 5000)?
-              waitTimeBeforeRequestingFailover - (System.currentTimeMillis() - startTime): 0;
-              
-          
-          if (waitToRequest > 0) {
-            Thread.sleep(waitToRequest);
-          }
-          if (isPrimarySuccess.get() == false) {
-            T t = failoverCallable.call();
-
-            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail > 5000)?
-                waitTimeBeforeAcceptingResults - (System.currentTimeMillis() - startTime): 0;
-            if (isPrimarySuccess.get() == false) {
-              if (waitToAccept > 0) {
-                Thread.sleep(waitToAccept);
-              }
-            }
-
-            return new ResultWrapper(false, t);
-          } else {
-            throw new RuntimeException("Not needed");
-          }
-
-        }
-      });
-    }
-    try {
-
-      //ResultWrapper<T> t = exe.invokeAny(callables);
-      for (Callable<ResultWrapper<T>> call: callables) {
-        exeS.submit(call);
-      }
-      
-      
-      
-      ResultWrapper<T> result = exeS.take().get();
-      //exe.shutdownNow();
-      
-      return result; 
-    } catch (InterruptedException e) {
-      e.printStackTrace();
-      LOG.error(e);
-    } catch (ExecutionException e) {
-      e.printStackTrace();
-      LOG.error(e);
-    }
-    return null;
-  }
-  */
+  
   public static class ResultWrapper<T> {
     public Boolean isPrimary;
     public T t;
@@ -198,7 +124,5 @@ public class SpeculativeRequester<T extends Object> {
     }
   }
   
-  public interface RequestFunction<T> {
-    public T call(HTableInterface table) throws Exception;
-  }
+ 
 }

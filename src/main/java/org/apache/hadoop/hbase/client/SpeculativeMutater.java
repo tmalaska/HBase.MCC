@@ -1,6 +1,7 @@
 package org.apache.hadoop.hbase.client;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
@@ -12,16 +13,19 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.hadoop.hbase.client.SpeculativeRequester.ResultWrapper;
 
 public class SpeculativeMutater {
   static final Log LOG = LogFactory.getLog(SpeculativeMutater.class);
 
   static ExecutorService exe = Executors.newFixedThreadPool(200);
   
-  
-  public static Boolean mutate(final long waitToSendFailover, final long waitToSendFailoverWithException, final Callable<Void> primaryCallable,
-      final List<Callable<Void>> failoverCallables, AtomicLong lastPrimaryFail) {
-    
+  public static Boolean mutate(final long waitToSendFailover, 
+      final long waitToSendFailoverWithException, 
+      final HBaseTableFunction<Void> function, 
+      final HTableInterface primaryTable, 
+      final Collection<HTableInterface> failoverTables,
+      final AtomicLong lastPrimaryFail) {
     ExecutorCompletionService<Boolean> exeS = new ExecutorCompletionService<Boolean>(exe);
     
     ArrayList<Callable<Boolean>> callables = new ArrayList<Callable<Boolean>>();
@@ -33,16 +37,23 @@ public class SpeculativeMutater {
     if (System.currentTimeMillis() - lastPrimaryFinalFail > 5000) {
       callables.add(new Callable<Boolean>() {
         public Boolean call() throws Exception {
-          
-          primaryCallable.call();
-          isPrimarySuccess.set(true);
-          return true; 
+          try {
+            function.call(primaryTable);
+            isPrimarySuccess.set(true);
+            return true; 
+          } catch (java.io.InterruptedIOException e) {
+            Thread.currentThread().interrupt();
+          } catch (Exception e) {
+            lastPrimaryFail.set(System.currentTimeMillis());
+            Thread.currentThread().interrupt();
+          }
+          return null;
         }
       });
     }
     
 
-    for (final Callable<Void> failoverCallable : failoverCallables) {
+    for (final HTableInterface failoverTable : failoverTables) {
       callables.add(new Callable<Boolean>() {
 
         public Boolean call() throws Exception {
@@ -55,7 +66,7 @@ public class SpeculativeMutater {
           }
           if (isPrimarySuccess.get() == false) {
             //System.out.print("x");
-            failoverCallable.call();
+            function.call(failoverTable);
             //System.out.print("X");
           }
           return false;
