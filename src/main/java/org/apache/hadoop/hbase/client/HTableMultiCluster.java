@@ -36,6 +36,7 @@ import org.apache.hadoop.hbase.client.ResultScanner;
 import org.apache.hadoop.hbase.client.Row;
 import org.apache.hadoop.hbase.client.RowMutations;
 import org.apache.hadoop.hbase.client.Scan;
+import org.apache.hadoop.hbase.client.SpeculativeRequester.RequestFunction;
 import org.apache.hadoop.hbase.client.SpeculativeRequester.ResultWrapper;
 import org.apache.hadoop.hbase.client.coprocessor.Batch.Call;
 import org.apache.hadoop.hbase.client.coprocessor.Batch.Callback;
@@ -60,6 +61,7 @@ public class HTableMultiCluster implements HTableInterface {
   int waitTimeBeforeAcceptingBatchResults;
   int waitTimeBeforeRequestingBatchFailover;
   int waitTimeBeforeMutatingBatchFailover;
+  
 
   HTableStats stats = new HTableStats();
 
@@ -114,23 +116,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long startTime = System.currentTimeMillis();
 
-    Callable<Boolean> primaryCallable = new Callable<Boolean>() {
-      public Boolean call() throws Exception {
-        return primaryHTable.exists(get);
+    RequestFunction<Boolean> function = new RequestFunction<Boolean>() {
+      @Override
+      public Boolean call(HTableInterface table) throws Exception{
+        return table.exists(get);
       }
     };
-
-    ArrayList<Callable<Boolean>> callables = new ArrayList<Callable<Boolean>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<Boolean>() {
-        public Boolean call() throws Exception {
-          return failoverTable.exists(get);
-        }
-      });
-    }
-
+    
     ResultWrapper<Boolean> result = (new SpeculativeRequester<Boolean>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -141,23 +136,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long startTime = System.currentTimeMillis();
 
-    Callable<Boolean[]> primaryCallable = new Callable<Boolean[]>() {
-      public Boolean[] call() throws Exception {
-        return primaryHTable.exists(gets);
+    RequestFunction<Boolean[]> function = new RequestFunction<Boolean[]>() {
+      @Override
+      public Boolean[] call(HTableInterface table) throws Exception{
+        return table.exists(gets);
       }
     };
-
-    ArrayList<Callable<Boolean[]>> callables = new ArrayList<Callable<Boolean[]>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<Boolean[]>() {
-        public Boolean[] call() throws Exception {
-          return failoverTable.exists(gets);
-        }
-      });
-    }
-
+    
     ResultWrapper<Boolean[]> result = (new SpeculativeRequester<Boolean[]>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -189,34 +177,17 @@ public class HTableMultiCluster implements HTableInterface {
   public Result get(final Get get) throws IOException {
 
     long ts = System.currentTimeMillis();
-    Callable<Result> primaryCallable = new Callable<Result>() {
-      public Result call() throws Exception {
-        try {
-          return primaryHTable.get(get); 
-        } catch (java.io.InterruptedIOException e) {
-          //throw e;
-          Thread.currentThread().interrupt();
-        } catch (Exception e) {
-          lastPrimaryFail.set(System.currentTimeMillis());
-          Thread.currentThread().interrupt();
-          //e.printStackTrace();
-          //throw e;
-        }
-        return null;
+    
+    RequestFunction<Result> function = new RequestFunction<Result>() {
+      @Override
+      public Result call(HTableInterface table) throws Exception{
+        return table.get(get);
       }
     };
-
-    ArrayList<Callable<Result>> callables = new ArrayList<Callable<Result>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<Result>() {
-        public Result call() throws Exception {
-          return failoverTable.get(get);
-        }
-      });
-    }
-
+     
     ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -226,35 +197,18 @@ public class HTableMultiCluster implements HTableInterface {
   public Result[] get(final List<Get> gets) throws IOException {
     long ts = System.currentTimeMillis();
 
-    Callable<Result[]> primaryCallable = new Callable<Result[]>() {
-      public Result[] call() throws Exception {
-        try {
-          return primaryHTable.get(gets);
-        } catch (java.io.InterruptedIOException e) {
-          //throw e;
-          Thread.currentThread().interrupt();
-        } catch (Exception e) {
-          lastPrimaryFail.set(System.currentTimeMillis());
-          Thread.currentThread().interrupt();
-          //e.printStackTrace();
-          //throw e;
-        }
-        return null;
+    RequestFunction<Result[]> function = new RequestFunction<Result[]>() {
+      @Override
+      public Result[] call(HTableInterface table) throws Exception{
+        return table.get(gets);
       }
     };
-
-    ArrayList<Callable<Result[]>> callables = new ArrayList<Callable<Result[]>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<Result[]>() {
-        public Result[] call() throws Exception {
-          return failoverTable.get(gets);
-        }
-      });
-    }
-
+     
     ResultWrapper<Result[]> result = (new SpeculativeRequester<Result[]>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
+    
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - ts);
 
     return result.t;
@@ -267,23 +221,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long ts = System.currentTimeMillis();
 
-    Callable<Result> primaryCallable = new Callable<Result>() {
-      public Result call() throws Exception {
-        return primaryHTable.getRowOrBefore(row, family);
+    RequestFunction<Result> function = new RequestFunction<Result>() {
+      @Override
+      public Result call(HTableInterface table) throws Exception{
+        return table.getRowOrBefore(row, family);
       }
     };
-
-    ArrayList<Callable<Result>> callables = new ArrayList<Callable<Result>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<Result>() {
-        public Result call() throws Exception {
-          return failoverTable.getRowOrBefore(row, family);
-        }
-      });
-    }
-
+     
     ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -294,23 +241,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long ts = System.currentTimeMillis();
 
-    Callable<ResultScanner> primaryCallable = new Callable<ResultScanner>() {
-      public ResultScanner call() throws Exception {
-        return primaryHTable.getScanner(scan);
+    RequestFunction<ResultScanner> function = new RequestFunction<ResultScanner>() {
+      @Override
+      public ResultScanner call(HTableInterface table) throws Exception{
+        return table.getScanner(scan);
       }
     };
-
-    ArrayList<Callable<ResultScanner>> callables = new ArrayList<Callable<ResultScanner>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<ResultScanner>() {
-        public ResultScanner call() throws Exception {
-          return failoverTable.getScanner(scan);
-        }
-      });
-    }
-
+     
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -322,23 +262,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long ts = System.currentTimeMillis();
 
-    Callable<ResultScanner> primaryCallable = new Callable<ResultScanner>() {
-      public ResultScanner call() throws Exception {
-        return primaryHTable.getScanner(family);
+    RequestFunction<ResultScanner> function = new RequestFunction<ResultScanner>() {
+      @Override
+      public ResultScanner call(HTableInterface table) throws Exception{
+        return table.getScanner(family);
       }
     };
-
-    ArrayList<Callable<ResultScanner>> callables = new ArrayList<Callable<ResultScanner>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<ResultScanner>() {
-        public ResultScanner call() throws Exception {
-          return failoverTable.getScanner(family);
-        }
-      });
-    }
-
+     
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -351,23 +284,16 @@ public class HTableMultiCluster implements HTableInterface {
 
     long ts = System.currentTimeMillis();
 
-    Callable<ResultScanner> primaryCallable = new Callable<ResultScanner>() {
-      public ResultScanner call() throws Exception {
-        return primaryHTable.getScanner(family, qualifier);
+    RequestFunction<ResultScanner> function = new RequestFunction<ResultScanner>() {
+      @Override
+      public ResultScanner call(HTableInterface table) throws Exception{
+        return table.getScanner(family, qualifier);
       }
     };
-
-    ArrayList<Callable<ResultScanner>> callables = new ArrayList<Callable<ResultScanner>>();
-    for (final HTableInterface failoverTable : failoverHTables) {
-      callables.add(new Callable<ResultScanner>() {
-        public ResultScanner call() throws Exception {
-          return failoverTable.getScanner(family, qualifier);
-        }
-      });
-    }
-
+     
     ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).request(primaryCallable, callables);
+        waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail)).
+        request(function, primaryHTable, failoverHTables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);

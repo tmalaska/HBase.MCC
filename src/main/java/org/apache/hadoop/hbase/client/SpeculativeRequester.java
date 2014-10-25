@@ -1,6 +1,7 @@
 package org.apache.hadoop.hbase.client;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.Callable;
@@ -18,7 +19,8 @@ public class SpeculativeRequester<T extends Object> {
 
   long waitTimeBeforeRequestingFailover;
   long waitTimeBeforeAcceptingResults;
-  long lastPrimaryFail;
+  AtomicLong lastPrimaryFail;
+  
   static final Log LOG = LogFactory.getLog(SpeculativeRequester.class);
 
   static ExecutorService exe = Executors.newFixedThreadPool(200);
@@ -27,9 +29,91 @@ public class SpeculativeRequester<T extends Object> {
       long waitTimeBeforeAcceptingResults, AtomicLong lastPrimaryFail) {
     this.waitTimeBeforeRequestingFailover = waitTimeBeforeRequestingFailover;
     this.waitTimeBeforeAcceptingResults = waitTimeBeforeAcceptingResults;
-    this.lastPrimaryFail = lastPrimaryFail.get();
+    this.lastPrimaryFail = lastPrimaryFail;
   }
 
+  public ResultWrapper<T> request(final RequestFunction<T> function, 
+      final HTableInterface primaryTable, 
+      final Collection<HTableInterface> failoverTables) {
+    
+    ExecutorCompletionService<ResultWrapper<T>> exeS = new ExecutorCompletionService<ResultWrapper<T>>(exe);
+    
+    final AtomicBoolean isPrimarySuccess = new AtomicBoolean(false);
+    final long startTime = System.currentTimeMillis();
+
+    ArrayList<Callable<ResultWrapper<T>>> callables = new ArrayList<Callable<ResultWrapper<T>>>();
+
+    if (System.currentTimeMillis() - lastPrimaryFail.get() > 5000) {
+      callables.add(new Callable<ResultWrapper<T>>() {
+        public ResultWrapper<T> call() throws Exception {
+          try {
+            T t = function.call(primaryTable);
+            isPrimarySuccess.set(true);
+            return new ResultWrapper(true, t);
+          } catch (java.io.InterruptedIOException e) {
+            Thread.currentThread().interrupt();
+          } catch (Exception e) {
+            lastPrimaryFail.set(System.currentTimeMillis());
+            Thread.currentThread().interrupt();
+          }
+          return null;
+        }
+      });
+    }
+
+    for (final HTableInterface failoverTable : failoverTables) {
+      callables.add(new Callable<ResultWrapper<T>>() {
+
+        public ResultWrapper<T> call() throws Exception {
+          
+          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail.get() > 5000)?
+              waitTimeBeforeRequestingFailover - (System.currentTimeMillis() - startTime): 0;
+              
+          
+          if (waitToRequest > 0) {
+            Thread.sleep(waitToRequest);
+          }
+          if (isPrimarySuccess.get() == false) {
+            T t = function.call(failoverTable);
+
+            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail.get() > 5000)?
+                waitTimeBeforeAcceptingResults - (System.currentTimeMillis() - startTime): 0;
+            if (isPrimarySuccess.get() == false) {
+              if (waitToAccept > 0) {
+                Thread.sleep(waitToAccept);
+              }
+            }
+
+            return new ResultWrapper(false, t);
+          } else {
+            throw new RuntimeException("Not needed");
+          }
+
+        }
+      });
+    }
+    try {
+
+      //ResultWrapper<T> t = exe.invokeAny(callables);
+      for (Callable<ResultWrapper<T>> call: callables) {
+        exeS.submit(call);
+      }
+      
+      ResultWrapper<T> result = exeS.take().get();
+      //exe.shutdownNow();
+      
+      return result; 
+    } catch (InterruptedException e) {
+      e.printStackTrace();
+      LOG.error(e);
+    } catch (ExecutionException e) {
+      e.printStackTrace();
+      LOG.error(e);
+    }
+    return null;
+    
+  }
+  /*
   public ResultWrapper<T> request(final Callable<T> primaryCallable,
       final List<Callable<T>> failoverCallables) {
 
@@ -103,7 +187,7 @@ public class SpeculativeRequester<T extends Object> {
     }
     return null;
   }
-  
+  */
   public static class ResultWrapper<T> {
     public Boolean isPrimary;
     public T t;
@@ -112,5 +196,9 @@ public class SpeculativeRequester<T extends Object> {
       this.isPrimary = isPrimary;
       this.t = t;
     }
+  }
+  
+  public interface RequestFunction<T> {
+    public T call(HTableInterface table) throws Exception;
   }
 }
