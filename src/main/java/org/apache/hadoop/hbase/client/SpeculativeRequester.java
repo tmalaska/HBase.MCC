@@ -2,8 +2,6 @@ package org.apache.hadoop.hbase.client;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
-import java.util.Map.Entry;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
@@ -20,20 +18,25 @@ public class SpeculativeRequester<T extends Object> {
   long waitTimeBeforeRequestingFailover;
   long waitTimeBeforeAcceptingResults;
   AtomicLong lastPrimaryFail;
+  long waitTimeFromLastPrimaryFail;
   
   static final Log LOG = LogFactory.getLog(SpeculativeRequester.class);
 
   static ExecutorService exe = Executors.newFixedThreadPool(200);
   
   public SpeculativeRequester(long waitTimeBeforeRequestingFailover,
-      long waitTimeBeforeAcceptingResults, AtomicLong lastPrimaryFail) {
+      long waitTimeBeforeAcceptingResults,
+      AtomicLong lastPrimaryFail,
+      long waitTimeFromLastPrimaryFail
+    ) {
     this.waitTimeBeforeRequestingFailover = waitTimeBeforeRequestingFailover;
     this.waitTimeBeforeAcceptingResults = waitTimeBeforeAcceptingResults;
     this.lastPrimaryFail = lastPrimaryFail;
+    this.waitTimeFromLastPrimaryFail = waitTimeFromLastPrimaryFail;
   }
 
   public ResultWrapper<T> request(final HBaseTableFunction<T> function, 
-      final HTableInterface primaryTable, 
+      final HTableInterface primaryTable,
       final Collection<HTableInterface> failoverTables) {
     
     ExecutorCompletionService<ResultWrapper<T>> exeS = new ExecutorCompletionService<ResultWrapper<T>>(exe);
@@ -43,7 +46,7 @@ public class SpeculativeRequester<T extends Object> {
 
     ArrayList<Callable<ResultWrapper<T>>> callables = new ArrayList<Callable<ResultWrapper<T>>>();
 
-    if (System.currentTimeMillis() - lastPrimaryFail.get() > 5000) {
+    if (System.currentTimeMillis() - lastPrimaryFail.get() > waitTimeFromLastPrimaryFail) {
       callables.add(new Callable<ResultWrapper<T>>() {
         public ResultWrapper<T> call() throws Exception {
           try {
@@ -66,7 +69,7 @@ public class SpeculativeRequester<T extends Object> {
 
         public ResultWrapper<T> call() throws Exception {
           
-          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail.get() > 5000)?
+          long waitToRequest = (System.currentTimeMillis() - lastPrimaryFail.get() > waitTimeFromLastPrimaryFail)?
               waitTimeBeforeRequestingFailover - (System.currentTimeMillis() - startTime): 0;
               
           
@@ -76,7 +79,7 @@ public class SpeculativeRequester<T extends Object> {
           if (isPrimarySuccess.get() == false) {
             T t = function.call(failoverTable);
 
-            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail.get() > 5000)?
+            long waitToAccept = (System.currentTimeMillis() - lastPrimaryFail.get() > waitTimeFromLastPrimaryFail)?
                 waitTimeBeforeAcceptingResults - (System.currentTimeMillis() - startTime): 0;
             if (isPrimarySuccess.get() == false) {
               if (waitToAccept > 0) {

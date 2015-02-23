@@ -2,7 +2,6 @@ package org.apache.hadoop.hbase.client;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
@@ -13,7 +12,6 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.client.SpeculativeRequester.ResultWrapper;
 
 public class SpeculativeMutater {
   static final Log LOG = LogFactory.getLog(SpeculativeMutater.class);
@@ -23,9 +21,10 @@ public class SpeculativeMutater {
   public static Boolean mutate(final long waitToSendFailover, 
       final long waitToSendFailoverWithException, 
       final HBaseTableFunction<Void> function, 
-      final HTableInterface primaryTable, 
+      final HTableInterface primaryTable,
       final Collection<HTableInterface> failoverTables,
-      final AtomicLong lastPrimaryFail) {
+      final AtomicLong lastPrimaryFail,
+      final int waitTimeFromLastPrimaryFail) {
     ExecutorCompletionService<Boolean> exeS = new ExecutorCompletionService<Boolean>(exe);
     
     ArrayList<Callable<Boolean>> callables = new ArrayList<Callable<Boolean>>();
@@ -38,7 +37,9 @@ public class SpeculativeMutater {
       callables.add(new Callable<Boolean>() {
         public Boolean call() throws Exception {
           try {
+            LOG.info(" --- CallingPrimary.1:" + isPrimarySuccess.get() + ", " + (System.currentTimeMillis() - startTime));
             function.call(primaryTable);
+            LOG.info(" --- CallingPrimary.2:" + isPrimarySuccess.get() + ", " + (System.currentTimeMillis() - startTime));
             isPrimarySuccess.set(true);
             return true; 
           } catch (java.io.InterruptedIOException e) {
@@ -59,30 +60,32 @@ public class SpeculativeMutater {
         public Boolean call() throws Exception {
           long waitToRequest = (System.currentTimeMillis() - lastPrimaryFinalFail > 5000)?
               waitToSendFailover - (System.currentTimeMillis() - startTime): waitToSendFailoverWithException - (System.currentTimeMillis() - startTime);
-              
+
+          LOG.info(" --- waitToRequest:" + waitToRequest + "," + (System.currentTimeMillis() - lastPrimaryFinalFail) +
+                  "," + (waitToSendFailover - (System.currentTimeMillis() - startTime)) +
+                  "," + (waitToSendFailoverWithException - (System.currentTimeMillis() - startTime)));
               
           if (waitToRequest > 0) {
             Thread.sleep(waitToRequest);
           }
+          LOG.info(" --- isPrimarySuccess.get():" + isPrimarySuccess.get());
           if (isPrimarySuccess.get() == false) {
-            //System.out.print("x");
+            LOG.info(" --- CallingFailOver.1:" + isPrimarySuccess.get() + ", " + (System.currentTimeMillis() - startTime));
             function.call(failoverTable);
-            //System.out.print("X");
+            LOG.info(" --- CallingFailOver.2:" + isPrimarySuccess.get() + ", " + (System.currentTimeMillis() - startTime));
           }
+
           return false;
         }
       });
     }
     try {
-      //Boolean result = exe.invokeAny(callables);
-      
+
       for (Callable<Boolean> call: callables) {
         exeS.submit(call);
       }
       Boolean result = exeS.take().get();
-      
-      //exe.shutdownNow();
-      
+
       return result;
     } catch (InterruptedException e) {
       e.printStackTrace();

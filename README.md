@@ -17,3 +17,6 @@ More testing will happen in the coming weeks.
 ### Design Doc
 There is a design doc in the root folder named MultiHBaseClientDesignDoc.docx.  That document goes over the approach and the configuration options.
 
+### Latest How to execute
+java -cp cxf-rt-transports-http-2.7.5.jar:hbase.multicluster-0.0.1-SNAPSHOT.jar org.apache.hadoop.hbase.test.MultiThreadedMultiClusterWithCmApiTest tedmalaska-hbase-mcc-2-1.ent.cloudera.com admin admin PrimaryCluster HBase tedmalaska-hbase-mcc-2-1.ent.cloudera.com admin admin FailoverCluster HBase2 mcc c 100 100 2 stats.csv
+

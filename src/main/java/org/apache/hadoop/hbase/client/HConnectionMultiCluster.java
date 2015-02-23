@@ -9,17 +9,7 @@ import java.util.concurrent.Executors;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HRegionLocation;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.MasterNotRunningException;
-import org.apache.hadoop.hbase.ServerName;
-import org.apache.hadoop.hbase.TableName;
-import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.HConnection;
-import org.apache.hadoop.hbase.client.HTableInterface;
-import org.apache.hadoop.hbase.client.MasterKeepAliveConnection;
-import org.apache.hadoop.hbase.client.NonceGenerator;
-import org.apache.hadoop.hbase.client.Row;
+import org.apache.hadoop.hbase.*;
 import org.apache.hadoop.hbase.client.coprocessor.Batch.Callback;
 import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.MasterService.BlockingInterface;
 import org.apache.hadoop.hbase.util.Bytes;
@@ -37,13 +27,11 @@ public class HConnectionMultiCluster implements HConnection {
   int waitTimeBeforeAcceptingBatchResults;
   int waitTimeBeforeRequestingBatchFailover;
   int waitTimeBeforeMutatingBatchFailover;
-  
-  //private volatile ExecutorService batchPool = null;
-  //private volatile boolean cleanupPool = false;
+  int waitTimeFromLastPrimaryFail;
 
   static final Log LOG = LogFactory.getLog(HConnectionMultiCluster.class);
   
-  ExecutorService executor; // = Executors.newFixedThreadPool(failoverHTables.size() + 1);
+  ExecutorService executor;
 
   public HConnectionMultiCluster(Configuration originalConfiguration,
       HConnection primaryConnection, HConnection[] failoverConnections) {
@@ -57,11 +45,11 @@ public class HConnectionMultiCluster implements HConnection {
     this.waitTimeBeforeAcceptingResults = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_ACCEPTING_FAILOVER_RESULT_CONFIG,
-            20);
+            100);
     this.waitTimeBeforeMutatingFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_MUTATING_FAILOVER_CONFIG,
-            20);
+            100);
     this.waitTimeBeforeMutatingFailoverWithPrimaryException = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_MUTATING_FAILOVER_WITH_PRIMARY_EXCEPTION_CONFIG,
@@ -69,19 +57,22 @@ public class HConnectionMultiCluster implements HConnection {
     this.waitTimeBeforeRequestingFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_REQUEST_FAILOVER_CONFIG,
-            20);
+            100);
     this.waitTimeBeforeAcceptingBatchResults = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_ACCEPTING_FAILOVER_BATCH_RESULT_CONFIG,
-            20);
+            100);
     this.waitTimeBeforeRequestingBatchFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_MUTATING_BATCH_FAILOVER_CONFIG,
-            20);
+            100);
     this.waitTimeBeforeMutatingBatchFailover = originalConfiguration
         .getInt(
             ConfigConst.HBASE_WAIT_TIME_BEFORE_REQUEST_BATCH_FAILOVER_CONFIG,
-            20);
+            100);
+    this.waitTimeFromLastPrimaryFail = originalConfiguration
+            .getInt(ConfigConst.HBASE_WAIT_TIME_BEFORE_TRYING_PRIMARY_AFTER_FAILURE, 5000);
+
     executor = Executors.newFixedThreadPool(originalConfiguration.getInt(ConfigConst.HBASE_MULTI_CLUSTER_CONNECTION_POOL_SIZE, 20));
   }
 
@@ -124,30 +115,30 @@ public class HConnectionMultiCluster implements HConnection {
 
   @Override
   public HTableInterface getTable(String tableName) throws IOException {
-    System.out.println(" -- foo1");
     return this.getTable(Bytes.toBytes(tableName));
   }
 
   @Override
   public HTableInterface getTable(byte[] tableName) throws IOException {
-    System.out.println(" -- foo2");
     return this.getTable(TableName.valueOf(tableName));
   }
 
   @Override
   public HTableInterface getTable(TableName tableName) throws IOException {
-    System.out.println(" -- foo3");
-    
-    
-    System.out.println(" -- getting primaryHTable" + primaryConnection.getConfiguration().get("hbase.zookeeper.quorum"));
+    LOG.info(" -- getting primaryHTable" + primaryConnection.getConfiguration().get("hbase.zookeeper.quorum"));
     HTableInterface primaryHTable = primaryConnection.getTable(tableName);
-    System.out.println(" --- got primaryHTable");
+    primaryHTable.setAutoFlush(true, true);
+
+    LOG.info(" --- got primaryHTable");
     ArrayList<HTableInterface> failoverHTables = new ArrayList<HTableInterface>();
     for (HConnection failOverConnection : failoverConnections) {
-      System.out.println(" -- getting failoverHTable:" + failOverConnection.getConfiguration().get("hbase.zookeeper.quorum"));
-      
-      failoverHTables.add(failOverConnection.getTable(tableName));
-      System.out.println(" --- got failoverHTable");
+      LOG.info(" -- getting failoverHTable:" + failOverConnection.getConfiguration().get("hbase.zookeeper.quorum"));
+
+      HTableInterface htable = failOverConnection.getTable(tableName);
+      htable.setAutoFlush(true, true);
+
+      failoverHTables.add(htable);
+      LOG.info(" --- got failoverHTable");
     }
 
     return new HTableMultiCluster(originalConfiguration, primaryHTable,
@@ -158,7 +149,8 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
-        waitTimeBeforeMutatingBatchFailover);
+        waitTimeBeforeMutatingBatchFailover,
+            waitTimeFromLastPrimaryFail);
   }
 
   public HTableInterface getTable(String tableName, ExecutorService pool)
@@ -187,11 +179,12 @@ public class HConnectionMultiCluster implements HConnection {
         waitTimeBeforeMutatingFailoverWithPrimaryException,
         waitTimeBeforeAcceptingBatchResults,
         waitTimeBeforeRequestingBatchFailover,
-        waitTimeBeforeMutatingBatchFailover);
+        waitTimeBeforeMutatingBatchFailover,
+            waitTimeFromLastPrimaryFail);
   }
 
   public boolean isMasterRunning() throws MasterNotRunningException,
-      ZooKeeperConnectionException {
+          ZooKeeperConnectionException {
     return primaryConnection.isMasterRunning();
   }
   

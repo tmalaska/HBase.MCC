@@ -1,12 +1,18 @@
 package org.apache.hadoop.hbase.client;
 
-import java.io.IOException;
-import java.io.Writer;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.log4j.Logger;
+
+import java.io.*;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class HTableStats {
+
+  Logger LOG = Logger.getLogger(HTableStats.class);
 
   AtomicLong maxPutTime = new AtomicLong(0);
   AtomicLong maxPutListTime = new AtomicLong(0);
@@ -40,8 +46,7 @@ public class HTableStats {
   long lastDeleteFailover = 0;
   long lastDeleteListPrimary = 0;
   long lastDeleteListFailover = 0;
-  
-  
+
   static final int ROLLING_AVG_WINDOW = 90;
   BlockingQueue<Long> putRollingAverage = new LinkedBlockingQueue<Long>();
   BlockingQueue<Long> putListRollingAverage = new LinkedBlockingQueue<Long>();
@@ -51,6 +56,9 @@ public class HTableStats {
   BlockingQueue<Long> deleteListRollingAverage = new LinkedBlockingQueue<Long>();
   
   static final String newLine = System.getProperty("line.separator");
+
+  Thread printingThread = null;
+  boolean continuePrinting = false;
   
   public HTableStats() {
     for (int i = 0; i < ROLLING_AVG_WINDOW; i++) {
@@ -64,36 +72,168 @@ public class HTableStats {
   }
   
   public void printPrettyStats() {
-    System.out.println("Stats: Max Time");
-    System.out.println(" > maxPutTime:        " + maxPutTime);
-    System.out.println(" > maxPutListTime:    " + maxPutListTime);
-    System.out.println(" > maxGetTime:        " + maxGetTime);
-    System.out.println(" > maxGetListTime:    " + maxGetListTime);
-    System.out.println(" > maxDeleteTime:     " + maxDeleteTime);
-    System.out.println(" > maxDeleteListTime: " + maxDeleteListTime);
-    System.out.println("Stats: Rolling Avg");
-    System.out.println(" > put:               " + getRollingAvg(putRollingAverage));
-    System.out.println(" > putList:           " + getRollingAvg(putListRollingAverage));
-    System.out.println(" > get:               " + getRollingAvg(getRollingAverage));
-    System.out.println(" > getList:           " + getRollingAvg(getListRollingAverage));
-    System.out.println(" > delete:            " + getRollingAvg(deleteRollingAverage));
-    System.out.println(" > deleteList:        " + getRollingAvg(deleteListRollingAverage));
-    System.out.println("Stats: Rolling Max");
-    System.out.println(" > put:               " + getRollingMax(putRollingAverage));
-    System.out.println(" > putList:           " + getRollingMax(putListRollingAverage));
-    System.out.println(" > get:               " + getRollingMax(getRollingAverage));
-    System.out.println(" > getList:           " + getRollingMax(getListRollingAverage));
-    System.out.println(" > delete:            " + getRollingMax(deleteRollingAverage));
-    System.out.println(" > deleteList:        " + getRollingMax(deleteListRollingAverage));
-    System.out.println("Stats: Dst");
-    System.out.println(" > put:               " + putPrimary + "/" + putFailover);
-    System.out.println(" > putList:           " + putListPrimary + "/" + putListFailover);
-    System.out.println(" > get:               " + getPrimary + "/" + getFailover);
-    System.out.println(" > getList:           " + getListPrimary + "/" + getListFailover);
-    System.out.println(" > delete:            " + deletePrimary + "/" + deleteFailover);
-    System.out.println(" > deleteList:        " + deleteListPrimary + "/" + deleteListFailover);
+    LOG.info("Stats: Max Time");
+    LOG.info(" > maxPutTime:        " + maxPutTime);
+    LOG.info(" > maxPutListTime:    " + maxPutListTime);
+    LOG.info(" > maxGetTime:        " + maxGetTime);
+    LOG.info(" > maxGetListTime:    " + maxGetListTime);
+    LOG.info(" > maxDeleteTime:     " + maxDeleteTime);
+    LOG.info(" > maxDeleteListTime: " + maxDeleteListTime);
+    LOG.info("Stats: Rolling Avg");
+    LOG.info(" > put:               " + getRollingAvg(putRollingAverage));
+    LOG.info(" > putList:           " + getRollingAvg(putListRollingAverage));
+    LOG.info(" > get:               " + getRollingAvg(getRollingAverage));
+    LOG.info(" > getList:           " + getRollingAvg(getListRollingAverage));
+    LOG.info(" > delete:            " + getRollingAvg(deleteRollingAverage));
+    LOG.info(" > deleteList:        " + getRollingAvg(deleteListRollingAverage));
+    LOG.info("Stats: Rolling Max");
+    LOG.info(" > put:               " + getRollingMax(putRollingAverage));
+    LOG.info(" > putList:           " + getRollingMax(putListRollingAverage));
+    LOG.info(" > get:               " + getRollingMax(getRollingAverage));
+    LOG.info(" > getList:           " + getRollingMax(getListRollingAverage));
+    LOG.info(" > delete:            " + getRollingMax(deleteRollingAverage));
+    LOG.info(" > deleteList:        " + getRollingMax(deleteListRollingAverage));
+    LOG.info("Stats: Dst");
+    LOG.info(" > put:               " + putPrimary + "/" + putFailover);
+    LOG.info(" > putList:           " + putListPrimary + "/" + putListFailover);
+    LOG.info(" > get:               " + getPrimary + "/" + getFailover);
+    LOG.info(" > getList:           " + getListPrimary + "/" + getListFailover);
+    LOG.info(" > delete:            " + deletePrimary + "/" + deleteFailover);
+    LOG.info(" > deleteList:        " + deleteListPrimary + "/" + deleteListFailover);
   }
-  
+
+  public void stopPrintingStats() {
+    continuePrinting = false;
+    printingThread = null;
+  }
+
+  public void printStats(final BufferedWriter writer, final long secondsHeartbeat) {
+
+    try {
+      writer.append("maxPutTime," +
+              "maxPutListTime + ," +
+              "maxGetTime," +
+              "maxGetListTime," +
+              "maxDeleteTime," +
+              "maxDeleteListTime," +
+              "putRollingAverage," +
+              "putListRollingAverage," +
+              "getRollingAverage," +
+              "getListRollingAverage," +
+              "deleteRollingAverage," +
+              "deleteListRollingAverage," +
+              "putRollingMax," +
+              "putListRollingMax," +
+              "getRollingMax," +
+              "getListRollingMax," +
+              "deleteRollingMax," +
+              "deleteListRollingMax," +
+              "putPrimaryTotalCount," +
+              "putPrimaryRollingCount," +
+              "putFailoverTotalCount," +
+              "putFailoverRollingCount," +
+              "putListPrimaryTotalCount," +
+              "putListPrimaryRollingCount," +
+              "putListFailoverTotalCount," +
+              "putListFailoverRollingCount," +
+              "getPrimaryCount," +
+              "getPrimaryRollingCount," +
+              "getFailoverCount," +
+              "getFailoverRollingCount," +
+              "getListPrimaryCount," +
+              "getListPrimaryRollingCount," +
+              "getListFailoverCount," +
+              "getListFailoverRollingCount," +
+              "deletePrimaryCount," +
+              "deletePrimaryRollingCount," +
+              "deleteFailoverCount," +
+              "deleteFailoverRollingCount," +
+              "deleteListPrimaryCount," +
+              "deleteListPrimaryRollingCount," +
+              "deleteListFailoverCount," +
+              "deleteListFailoverRollingCount," +
+              newLine);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+
+    Runnable printerRunnable = new Runnable() {
+      @Override
+      public void run() {
+        while(continuePrinting) {
+
+          try {
+            Thread.sleep(secondsHeartbeat);
+          } catch (InterruptedException e) {
+            e.printStackTrace();
+          }
+
+          String statStr = maxPutTime +
+                  "," + maxPutListTime +
+                  "," + maxGetTime +
+                  "," + maxGetListTime +
+                  "," + maxDeleteTime +
+                  "," + maxDeleteListTime +
+                  "," + getRollingAvg(putRollingAverage) +
+                  "," + getRollingAvg(putListRollingAverage) +
+                  "," + getRollingAvg(getRollingAverage) +
+                  "," + getRollingAvg(getListRollingAverage) +
+                  "," + getRollingAvg(deleteRollingAverage) +
+                  "," + getRollingAvg(deleteListRollingAverage) +
+                  "," + getRollingMax(putRollingAverage) +
+                  "," + getRollingMax(putListRollingAverage) +
+                  "," + getRollingMax(getRollingAverage) +
+                  "," + getRollingMax(getListRollingAverage) +
+                  "," + getRollingMax(deleteRollingAverage) +
+                  "," + getRollingMax(deleteListRollingAverage) +
+                  "," + putPrimary +
+                  "," + (putPrimary.get() - lastPutPrimary) +
+                  "," + putFailover +
+                  "," + (putFailover.get() - lastPutFailover) +
+                  "," + putListPrimary +
+                  "," + (putListPrimary.get() - lastPutListPrimary) +
+                  "," + putListFailover +
+                  "," + (putListFailover.get() - lastPutListFailover) +
+                  "," + getPrimary +
+                  "," + (getPrimary.get() - lastGetPrimary) +
+                  "," + (getFailover.get()) +
+                  "," + (getFailover.get() - lastGetFailover) +
+                  "," + (getListPrimary.get()) +
+                  "," + (getListPrimary.get() - lastGetListPrimary) +
+                  "," + (getListFailover.get()) +
+                  "," + (getFailover.get() - lastGetFailover) +
+                  "," + (deletePrimary.get()) +
+                  "," + (deletePrimary.get() - lastDeletePrimary) +
+                  "," + (deleteFailover.get()) +
+                  "," + (deleteFailover.get() - lastDeleteFailover) +
+                  "," + (deleteListPrimary.get()) +
+                  "," + (deleteListPrimary.get() - lastDeleteListPrimary) +
+                  "," + (deleteListFailover.get()) +
+                  "," + (deleteListFailover.get() - lastDeleteListFailover);
+
+          try {
+            writer.write(statStr);
+            writer.newLine();
+          } catch (IOException e) {
+            break;
+          }
+        }
+        System.out.println("---- Stats Stopped ----");
+      }
+    };
+
+    printingThread = new Thread(printerRunnable);
+    continuePrinting = true;
+    printingThread.start();
+  }
+
+  public void printStats(final OutputStream outputStream, final long secondsHeartbeat) {
+
+    final BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(outputStream));
+
+    printStats(writer, secondsHeartbeat);
+  }
+
   public static void printCSVHeaders(Writer writer) throws IOException {
     writer.append("maxPutTime," +
         "maxPutListTime + ," +
@@ -138,8 +278,6 @@ public class HTableStats {
         "deleteListFailoverCount," +
         "deleteListFailoverRollingCount," +
         newLine);
-    
-    
   }
   
   
@@ -287,6 +425,8 @@ public class HTableStats {
     }
     
     rollingAverage.add(time);
-    rollingAverage.poll();
+    if (rollingAverage.size() > 100) {
+      rollingAverage.poll();
+    }
   }
 }

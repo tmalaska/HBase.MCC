@@ -1,20 +1,16 @@
-package org.apache.hadoop.hbase.client;
+package org.apache.hadoop.hbase.test;
 
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileWriter;
-import java.io.IOException;
-import java.io.OutputStream;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.HBaseConfiguration;
-import org.apache.hadoop.hbase.HColumnDescriptor;
-import org.apache.hadoop.hbase.HTableDescriptor;
-import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.client.*;
 import org.apache.hadoop.hbase.util.Bytes;
 
 
@@ -50,7 +46,7 @@ public class RunMultiClusterTest {
       admin.disableTable(TableName.valueOf(tableName));
       admin.deleteTable(TableName.valueOf(tableName));
     } catch (Exception e) {
-      //nothing
+      e.printStackTrace();
     }
     
     System.out.println(" - Got HAdmin:" + admin.getClass());

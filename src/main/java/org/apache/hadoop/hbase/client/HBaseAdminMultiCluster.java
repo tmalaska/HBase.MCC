@@ -1,8 +1,6 @@
 package org.apache.hadoop.hbase.client;
 
-import java.io.Closeable;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -10,18 +8,12 @@ import java.util.concurrent.Callable;
 import java.util.regex.Pattern;
 
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.hbase.Abortable;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterNotRunningException;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
-import org.apache.hadoop.hbase.client.HBaseAdmin.MasterCallable;
-import org.apache.hadoop.hbase.protobuf.RequestConverter;
-import org.apache.hadoop.hbase.protobuf.generated.MasterProtos.DisableTableRequest;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Logger;
-
-import com.google.common.base.Optional;
-import com.google.protobuf.ServiceException;
 
 public class HBaseAdminMultiCluster extends HBaseAdmin {
 
@@ -90,6 +82,10 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
   @Override
   public void createTable(final HTableDescriptor desc) throws IOException {
 
+    HBaseAdminMultiCluster.super.createTable(desc, null);
+
+    /*
+
     @SuppressWarnings("unchecked")
     Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
     int counter = 0;
@@ -112,11 +108,17 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       };
     }
     replicationClusterExecute(callArray, "createTable");
+    */
   }
 
   @Override
   public void createTable(final HTableDescriptor desc, final byte[] startKey,
       final byte[] endKey, final int numRegions) throws IOException {
+
+    HBaseAdminMultiCluster.super.createTable(desc, startKey, endKey,
+            numRegions);
+
+    /*
 
     @SuppressWarnings("unchecked")
     Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
@@ -141,20 +143,54 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       };
     }
     replicationClusterExecute(callArray, "createTable");
+    */
   }
 
   @Override
   public void createTable(final HTableDescriptor desc, 
       final byte[][] splitKeys) throws IOException {
-    
+
+    HBaseAdminMultiCluster.super.createTable(desc, splitKeys);
+
+    /*
+
     @SuppressWarnings("unchecked")
-    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
+    Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 2];
     int counter = 0;
 
+    for (final Entry<String, HBaseAdmin> entry : failoverAdminMap.entrySet()) {
+      callArray[counter++] = new Callable<Void>() {
+        @Override
+        public Void call() throws Exception {
+          LOG.info("-- Create table: " + desc.getNameAsString() + " for cluster " + entry.getKey());
+          LOG.info("zk.quorum: " + entry.getValue().getConfiguration().get("hbase.zookeeper.quorum"));
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PreCreate- " + Bytes.toString(tableName.getName()));
+          }
+          LOG.info("-<");
+          //entry.getValue().createTable(desc, splitKeys);
+          LOG.info(">-");
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PostCreate- " + Bytes.toString(tableName.getName()));
+          }
+          LOG.info("-- Created table: " + desc.getNameAsString() + " for cluster " + entry.getKey());
+          return null;
+        }
+      };
+    }
     callArray[counter++] = new Callable<Void>() {
       @Override
       public Void call() throws Exception {
+        LOG.info("-- Create table: " + desc.getNameAsString() + " for primary cluster");
+        LOG.info("zk.quorum: " + HBaseAdminMultiCluster.super.getConfiguration().get("hbase.zookeeper.quorum"));
+        for (TableName tableName : HBaseAdminMultiCluster.super.listTableNames()) {
+          LOG.info("Primary PreCreate- " + Bytes.toString(tableName.getName()));
+        }
         HBaseAdminMultiCluster.super.createTable(desc, splitKeys);
+        for (TableName tableName : HBaseAdminMultiCluster.super.listTableNames()) {
+          LOG.info("Primary PostCreate- " + Bytes.toString(tableName.getName()));
+        }
+        LOG.info("-- Created table: " + desc.getNameAsString() + " for primary cluster");
         return null;
       }
     };
@@ -163,12 +199,24 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       callArray[counter++] = new Callable<Void>() {
         @Override
         public Void call() throws Exception {
-          entry.getValue().createTable(desc, splitKeys);
+          LOG.info("-- Create table: " + desc.getNameAsString() + " for cluster " + entry.getKey());
+          LOG.info("zk.quorum: " + entry.getValue().getConfiguration().get("hbase.zookeeper.quorum"));
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PreCreate- " + Bytes.toString(tableName.getName()));
+          }
+          LOG.info("-<");
+          //entry.getValue().createTable(desc, splitKeys);
+          LOG.info(">-");
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PostCreate- " + Bytes.toString(tableName.getName()));
+          }
+          LOG.info("-- Create table: " + desc.getNameAsString() + " for cluster " + entry.getKey());
           return null;
         }
       };
     }
     replicationClusterExecute(callArray, "createTable");
+    */
   }
 
   @Override
@@ -182,6 +230,7 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
     callArray[counter++] = new Callable<Void>() {
       @Override
       public Void call() throws Exception {
+        LOG.info("createTableAsync: " + desc.getName() + " for cluster: primary");
         HBaseAdminMultiCluster.super.createTableAsync(desc, splitKeys);
         return null;
       }
@@ -191,6 +240,7 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       callArray[counter++] = new Callable<Void>() {
         @Override
         public Void call() throws Exception {
+          LOG.info("createTableAsync: " + desc.getName() + " for cluster: " + entry.getKey());
           entry.getValue().createTableAsync(desc, splitKeys);
           return null;
         }
@@ -210,6 +260,7 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
     callArray[counter++] = new Callable<Void>() {
       @Override
       public Void call() throws Exception {
+        LOG.info("Delete Table: " + tableName + " for cluster: Primary");
         HBaseAdminMultiCluster.super.deleteTable(tableName);
         return null;
       }
@@ -219,7 +270,15 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       callArray[counter++] = new Callable<Void>() {
         @Override
         public Void call() throws Exception {
+          LOG.info("Delete Table: " + tableName + " for cluster: " + entry.getKey());
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PreDelete- " + Bytes.toString(tableName.getName()));
+          }
           entry.getValue().deleteTable(tableName);
+          LOG.info("Deleted Table: " + tableName + " for cluster: " + entry.getKey());
+          for (TableName tableName : entry.getValue().listTableNames()) {
+            LOG.info(entry.getKey() + " PostDelete- " + Bytes.toString(tableName.getName()));
+          }
           return null;
         }
       };
@@ -411,13 +470,18 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
 
   @Override
   public void disableTable(final TableName tableName) throws IOException {
+
+    HBaseAdminMultiCluster.super.disableTable(tableName);
+    /*
     Callable<Void>[] callArray = new Callable[failoverAdminMap.size() + 1];
     int counter = 0;
 
     callArray[counter++] = new Callable<Void>() {
       @Override
       public Void call() throws Exception {
+        LOG.info("Disable Table: " + tableName + " for cluster: primary");
         HBaseAdminMultiCluster.super.disableTable(tableName);
+        LOG.info("Disabled Table: " + tableName + " for cluster: primary");
         return null;
       }
     };
@@ -426,12 +490,15 @@ public class HBaseAdminMultiCluster extends HBaseAdmin {
       callArray[counter++] = new Callable<Void>() {
         @Override
         public Void call() throws Exception {
+          LOG.info("Disable Table: " + tableName + " for cluster: " + entry.getKey());
           entry.getValue().disableTable(tableName);
+          LOG.info("Disabled Table: " + tableName + " for cluster: " + entry.getKey());
           return null;
         }
       };
     }
     replicationClusterExecute(callArray, "disableTable");
+    */
   }
 
   @Override

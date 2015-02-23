@@ -12,5 +12,7 @@ public class ConfigConst {
   public static final String HBASE_WAIT_TIME_BEFORE_REQUEST_BATCH_FAILOVER_CONFIG = "hbase.wait.time.before.request.batch.failover";
   public static final String HBASE_WAIT_TIME_BEFORE_MUTATING_BATCH_FAILOVER_CONFIG = "hbase.wait.time.before.mutating.batch.failover";
   public static final String HBASE_MULTI_CLUSTER_CONNECTION_POOL_SIZE = "hbase.multi.cluster.connection.pool.size";
+  public static final String HBASE_WAIT_TIME_BEFORE_TRYING_PRIMARY_AFTER_FAILURE = "hbase.wait.time.before.trying.primary.after.failure";
+
   
 }
