@@ -92,6 +92,7 @@ public class HConnectionMultiCluster implements HConnection {
     Exception lastException = null;
     try {
       primaryConnection.close();
+      LOG.info("Closed primary connection");
     } catch (Exception e) {
       LOG.error("Exception while closing primary", e);
       lastException = e;
@@ -99,10 +100,20 @@ public class HConnectionMultiCluster implements HConnection {
     for (HConnection failOverConnection : failoverConnections) {
       try {
         failOverConnection.close();
+        LOG.info("Closed failover connection");
       } catch (Exception e) {
         LOG.error("Exception while closing primary", e);
         lastException = e;
       }
+    }
+    if (executor != null) {
+    	try {
+    	  executor.shutdownNow();
+          LOG.info("MCC shutdown successful");
+    	} catch (Exception e) {
+    	  LOG.error("Exception while shutting down MCC executor", e);
+    	  lastException = e;
+    	}
     }
     if (lastException != null) {
       throw new IOException(lastException);
@@ -140,7 +151,6 @@ public class HConnectionMultiCluster implements HConnection {
       failoverHTables.add(htable);
       LOG.info(" --- got failoverHTable");
     }
-
     return new HTableMultiCluster(originalConfiguration, primaryHTable,
         failoverHTables, isMasterMaster, 
         waitTimeBeforeAcceptingResults,

@@ -16,9 +16,9 @@ import org.apache.commons.logging.LogFactory;
 public class SpeculativeMutater {
   static final Log LOG = LogFactory.getLog(SpeculativeMutater.class);
 
-  static ExecutorService exe = Executors.newFixedThreadPool(200);
+  ExecutorService exe = Executors.newFixedThreadPool(200);
   
-  public static Boolean mutate(final long waitToSendFailover, 
+  public Boolean mutate(final long waitToSendFailover, 
       final long waitToSendFailoverWithException, 
       final HBaseTableFunction<Void> function, 
       final HTableInterface primaryTable,
@@ -85,7 +85,6 @@ public class SpeculativeMutater {
         exeS.submit(call);
       }
       Boolean result = exeS.take().get();
-
       return result;
     } catch (InterruptedException e) {
       e.printStackTrace();
@@ -95,5 +94,9 @@ public class SpeculativeMutater {
       LOG.error(e);
     }    
     return null;
+  }
+  
+  public void shutDown(){
+	  exe.shutdown();
   }
 }

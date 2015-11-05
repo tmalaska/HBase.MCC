@@ -8,7 +8,6 @@ import java.util.zip.*;
 import com.cloudera.api.ClouderaManagerClientBuilder;
 import com.cloudera.api.DataView;
 import com.cloudera.api.model.*;
-import com.cloudera.api.v1.*;
 import com.cloudera.api.v8.RootResourceV8;
 import com.cloudera.api.v8.ServicesResourceV8;
 import org.apache.cxf.jaxrs.ext.multipart.InputStreamDataSource;

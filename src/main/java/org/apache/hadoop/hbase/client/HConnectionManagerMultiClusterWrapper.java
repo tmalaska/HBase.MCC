@@ -20,10 +20,9 @@ public class HConnectionManagerMultiClusterWrapper {
             .getStringCollection(ConfigConst.HBASE_FAILOVER_CLUSTERS_CONFIG);
 
     if (failoverClusters.size() == 0) {
-      LOG.info(" -- Getting a signle cluster connection !!");
+      LOG.info(" -- Getting a single cluster connection !!");
       return HConnectionManager.createConnection(conf);
-    } else {
-
+    } else { 
       Map<String, Configuration> configMap = HBaseMultiClusterConfigUtil
           .splitMultiConfigFile(conf);
 

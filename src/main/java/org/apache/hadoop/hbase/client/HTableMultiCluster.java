@@ -47,7 +47,8 @@ public class HTableMultiCluster implements HTableInterface {
   boolean autoFlush = true;
   protected long currentWriteBufferSize;
   private long writeBufferSize;
-
+  private  SpeculativeRequester req = null;
+  private SpeculativeMutater mutater = null;
 
   static final Log LOG = LogFactory.getLog(HTableMultiCluster.class);
 
@@ -81,6 +82,10 @@ public class HTableMultiCluster implements HTableInterface {
     this.writeBufferSize = originalConfiguration.getLong("hbase.client.write.buffer", 2097152L);
 
     this.originalConfiguration = originalConfiguration;
+    req = (new SpeculativeRequester<Result>(
+            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
+            waitTimeFromLastPrimaryFail));
+    mutater = new SpeculativeMutater();
   }
 
   public byte[] getTableName() {
@@ -114,10 +119,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<Boolean> result = (new SpeculativeRequester<Boolean>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<Boolean> result = req.request(function, primaryHTable, failoverHTables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -139,10 +141,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<Boolean[]> result = (new SpeculativeRequester<Boolean[]>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<Boolean[]> result = req.request(function, primaryHTable, failoverHTables);
 
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - startTime);
 
@@ -187,11 +186,8 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
-
+    SpeculativeRequester.ResultWrapper<Result> result = req.request(function, primaryHTable, failoverHTables);
+            
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
     Result returnResults = result.t;
@@ -212,11 +208,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<Result[]> result = (new SpeculativeRequester<Result[]>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
-
+    SpeculativeRequester.ResultWrapper<Result[]> result = req.request(function, primaryHTable, failoverHTables);
 
     stats.addGetList(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -240,10 +232,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<Result> result = (new SpeculativeRequester<Result>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<Result> result = req.request(function, primaryHTable, failoverHTables);
 
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
 
@@ -266,10 +255,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<ResultScanner> result = req.request(function, primaryHTable, failoverHTables);    
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -292,10 +278,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<ResultScanner> result = req.request(function, primaryHTable, failoverHTables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -319,10 +302,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    SpeculativeRequester.ResultWrapper<ResultScanner> result = (new SpeculativeRequester<ResultScanner>(
-            waitTimeBeforeRequestingFailover, waitTimeBeforeAcceptingResults, lastPrimaryFail,
-            waitTimeFromLastPrimaryFail)).
-            request(function, primaryHTable, failoverHTables);
+    SpeculativeRequester.ResultWrapper<ResultScanner> result = req.request(function, primaryHTable, failoverHTables);
 
     // need to add a scanner
     stats.addGet(result.isPrimary, System.currentTimeMillis() - ts);
@@ -334,8 +314,6 @@ public class HTableMultiCluster implements HTableInterface {
   public void put(final Put put) throws IOException {
     multiClusterPut(put);
   }
-
-
 
   public Boolean multiClusterPut(final Put put) throws IOException {
     if (autoFlush) {
@@ -375,7 +353,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    Boolean isPrimary = SpeculativeMutater.mutate(
+    Boolean isPrimary = mutater.mutate(
             waitTimeBeforeAcceptingBatchResults,
             waitTimeBeforeMutatingFailoverWithPrimaryException,
             function, primaryHTable, failoverHTables, lastPrimaryFail,
@@ -446,7 +424,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    Boolean isPrimary = SpeculativeMutater.mutate(
+    Boolean isPrimary = mutater.mutate(
             waitTimeBeforeAcceptingBatchResults,
             waitTimeBeforeMutatingFailoverWithPrimaryException,
             function, primaryHTable, failoverHTables, lastPrimaryFail,
@@ -477,7 +455,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    Boolean isPrimary = SpeculativeMutater.mutate(
+    Boolean isPrimary = mutater.mutate(
             waitTimeBeforeAcceptingBatchResults,
             waitTimeBeforeMutatingFailoverWithPrimaryException,
             function, primaryHTable, failoverHTables, lastPrimaryFail,
@@ -502,7 +480,7 @@ public class HTableMultiCluster implements HTableInterface {
       }
     };
 
-    Boolean isPrimary = SpeculativeMutater.mutate(
+    Boolean isPrimary = mutater.mutate(
             waitTimeBeforeAcceptingBatchResults,
             waitTimeBeforeMutatingFailoverWithPrimaryException,
             function, primaryHTable, failoverHTables, lastPrimaryFail,
@@ -575,6 +553,7 @@ public class HTableMultiCluster implements HTableInterface {
     try {
       synchronized (primaryHTable) {
         primaryHTable.close();
+        LOG.info("Closed primaryHTable successfully");
       }
     } catch (Exception e) {
       LOG.error("Exception while flushCommits primary", e);
@@ -584,12 +563,15 @@ public class HTableMultiCluster implements HTableInterface {
       try {
         synchronized (failoverTable) {
           failoverTable.close();
+          LOG.info("Closed failover HTables successfully");
         }
       } catch (Exception e) {
         LOG.error("Exception while flushCommitsy failover", e);
         lastException = e;
       }
     }
+    req.shutDown();
+    mutater.shutDown();
     if (lastException != null) {
       throw new IOException(lastException);
     }
