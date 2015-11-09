@@ -22,7 +22,7 @@ public class SpeculativeRequester<T extends Object> {
   
   static final Log LOG = LogFactory.getLog(SpeculativeRequester.class);
 
-  static ExecutorService exe = Executors.newFixedThreadPool(200);
+  ExecutorService exe = Executors.newFixedThreadPool(200);
   
   public SpeculativeRequester(long waitTimeBeforeRequestingFailover,
       long waitTimeBeforeAcceptingResults,
@@ -117,6 +117,10 @@ public class SpeculativeRequester<T extends Object> {
     
   }
   
+  public void shutDown() {
+	  exe.shutdown();
+  }
+  
   public static class ResultWrapper<T> {
     public Boolean isPrimary;
     public T t;
@@ -127,5 +131,4 @@ public class SpeculativeRequester<T extends Object> {
     }
   }
   
- 
 }
